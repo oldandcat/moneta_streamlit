@@ -36,8 +36,9 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Streamlit
-.streamlit/
+# Streamlit (exclude everything except config.toml)
+.streamlit/*
+!.streamlit/config.toml
 
 # Data directory
 data/
