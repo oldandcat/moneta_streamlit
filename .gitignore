@@ -43,6 +43,14 @@ Thumbs.db
 # Data directory
 data/
 
+# Large data files
+data.tar.xz
+
+# AWS files
+awscliv2.zip
+aws/
+~/.aws/
+
 # Database (if you want to exclude it)
 # *.db
 
