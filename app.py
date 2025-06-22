@@ -28,13 +28,13 @@ st.markdown("""
 
 # Function to get database connection
 def get_db_connection():
-    db_path = 'data/lots.db'
+    db_path = 'data/adalex/lots.db'
     if not os.path.exists(db_path):
         return None
     return sqlite3.connect(db_path)
 
 # Function to get filtered data using SQL with pagination
-def get_filtered_data(conn, year=None, metals=None, categories=None, search_query=None, currency='RUB', sort_by='lot_number', sort_order='ASC', limit=50, offset=0):
+def get_filtered_data(conn, year=None, metals=None, categories=None, search_query=None, currency='RUB', sort_by='date_recent', sort_order='ASC', limit=50, offset=0):
     if conn is None:
         return pd.DataFrame()
     
@@ -58,19 +58,21 @@ def get_filtered_data(conn, year=None, metals=None, categories=None, search_quer
         params.extend(categories)
     
     if search_query:
-        # Use improved search with multiple patterns
-        search_patterns = improve_search_query(search_query)
-        if search_patterns:
-            # Create OR conditions for multiple patterns
-            pattern_conditions = []
-            pattern_params = []
+        # Use improved search with case-insensitive AND logic
+        search_words = improve_search_query(search_query)
+        if search_words:
+            # Create AND conditions for each word in multiple fields
+            word_conditions = []
+            word_params = []
             
-            for pattern in search_patterns:
-                pattern_conditions.append("(description LIKE ? OR title LIKE ?)")
-                pattern_params.extend([f'%{pattern}%', f'%{pattern}%'])
+            for word in search_words:
+                # Search in both description and title fields, case-insensitive
+                word_conditions.append("(LOWER(COALESCE(description, '')) LIKE ? OR LOWER(COALESCE(title, '')) LIKE ?)")
+                word_params.extend([f'%{word}%', f'%{word}%'])
             
-            query += f" AND ({' OR '.join(pattern_conditions)})"
-            params.extend(pattern_params)
+            # Combine all word conditions with AND
+            query += f" AND ({' AND '.join(word_conditions)})"
+            params.extend(word_params)
     
     # Add sorting
     if sort_by == 'price_high':
@@ -86,7 +88,7 @@ def get_filtered_data(conn, year=None, metals=None, categories=None, search_quer
     elif sort_by == 'year_asc':
         query += " ORDER BY year ASC"
     else:
-        query += " ORDER BY lot_number ASC"
+        query += " ORDER BY year DESC"
     
     # Add pagination
     query += " LIMIT ? OFFSET ?"
@@ -119,82 +121,50 @@ def get_total_count(conn, year=None, metals=None, categories=None, search_query=
         params.extend(categories)
     
     if search_query:
-        # Use improved search with multiple patterns
-        search_patterns = improve_search_query(search_query)
-        if search_patterns:
-            # Create OR conditions for multiple patterns
-            pattern_conditions = []
-            pattern_params = []
+        # Use improved search with case-insensitive AND logic
+        search_words = improve_search_query(search_query)
+        if search_words:
+            # Create AND conditions for each word in multiple fields
+            word_conditions = []
+            word_params = []
             
-            for pattern in search_patterns:
-                pattern_conditions.append("(description LIKE ? OR title LIKE ?)")
-                pattern_params.extend([f'%{pattern}%', f'%{pattern}%'])
+            for word in search_words:
+                # Search in both description and title fields, case-insensitive
+                word_conditions.append("(LOWER(COALESCE(description, '')) LIKE ? OR LOWER(COALESCE(title, '')) LIKE ?)")
+                word_params.extend([f'%{word}%', f'%{word}%'])
             
-            query += f" AND ({' OR '.join(pattern_conditions)})"
-            params.extend(pattern_params)
+            # Combine all word conditions with AND
+            query += f" AND ({' AND '.join(word_conditions)})"
+            params.extend(word_params)
     
     result = pd.read_sql_query(query, conn, params=params)
     return result['count'].iloc[0]
-
-# Function to get search suggestions
-def get_search_suggestions(conn, query, limit=10):
-    if conn is None or not query:
-        return []
-    
-    sql_query = """
-    SELECT DISTINCT description 
-    FROM lots 
-    WHERE (description LIKE ? OR title LIKE ?)
-    AND description IS NOT NULL 
-    AND description != ''
-    LIMIT ?
-    """
-    
-    result = pd.read_sql_query(sql_query, conn, params=[f'%{query}%', f'%{query}%', limit])
-    return result['description'].tolist()
 
 # Function to improve search query
 def improve_search_query(query):
     """Improve search query for better matching"""
     if not query:
-        return query
-    
-    # Split query into words
-    words = query.lower().split()
-    
-    # Create multiple search patterns
-    patterns = []
-    
-    # Original query
-    patterns.append(query)
-    
-    # Individual words
-    for word in words:
-        if len(word) >= 2:  # Only words with 2+ characters
-            patterns.append(word)
-    
-    # Word combinations
-    if len(words) >= 2:
-        for i in range(len(words)):
-            for j in range(i+1, len(words)+1):
-                combination = ' '.join(words[i:j])
-                if len(combination) >= 3:
-                    patterns.append(combination)
-    
-    return patterns
-
-# Function to find images for a lot
-def find_lot_images(lot_number, image_dir=None):
-    """Find all images for a lot based on image_dir from database"""
-    if not image_dir:
         return []
     
-    # Use image_dir from database directly
+    # Split query into words and clean them
+    words = [word.strip().lower() for word in query.split() if len(word.strip()) >= 2]
+    
+    if not words:
+        return []
+    
+    # Return individual words for AND search
+    return words
+
+# Function to find images for a lot
+def find_lot_images(image_dir=None):
+    """Find all images for a lot based on image_dir from database (now full relative path)"""
+    if not image_dir:
+        return []
+    # Use image_dir from database directly (should be like data/adalex/images/lot_xxx)
     if os.path.isdir(image_dir):
         images = list(Path(image_dir).glob("*.jpg"))
         if images:
             return [str(img) for img in sorted(images)]  # Return all images sorted
-    
     return []
 
 def main():
@@ -203,7 +173,7 @@ def main():
     # Get database connection
     conn = get_db_connection()
     if conn is None:
-        st.error("Database not found. Please add your database to 'data/lots.db'")
+        st.error("Database not found. Please add your database to 'data/adalex/lots.db'")
         return
     
     try:
@@ -214,12 +184,11 @@ def main():
         
         # Sidebar filters
         st.sidebar.header("Фильтры")
-        currency = st.sidebar.selectbox("Валюта", ['RUB', 'USD', 'EUR'], index=0)
         
         # Year filter (single year selection)
         st.sidebar.subheader("Год")
-        selected_year = st.sidebar.selectbox("Выберите год", options=['Все'] + years, index=0)
-        year = None if selected_year == 'Все' else selected_year
+        selected_year = st.sidebar.number_input("Введите год", min_value=min(years), max_value=max(years), value=None, placeholder="Например: 1700")
+        year = selected_year if selected_year else None
         
         selected_metals = st.sidebar.multiselect("Металл", options=metals, default=[])
         selected_categories = st.sidebar.multiselect("Тип лота", options=categories, default=[])
@@ -227,11 +196,10 @@ def main():
         # Sorting options
         st.sidebar.subheader("Сортировка")
         sort_options = {
-            'lot_number': 'По номеру лота',
-            'price_high': 'По цене (дорогие сначала)',
-            'price_low': 'По цене (дешевые сначала)',
             'date_recent': 'По дате (новые сначала)',
             'date_old': 'По дате (старые сначала)',
+            'price_high': 'По цене (дорогие сначала)',
+            'price_low': 'По цене (дешевые сначала)',
             'year_desc': 'По году (новые сначала)',
             'year_asc': 'По году (старые сначала)'
         }
@@ -240,17 +208,12 @@ def main():
         # Search with autocomplete
         st.sidebar.subheader("Поиск")
         search_query = st.sidebar.text_input("Поиск по описанию", key="search_input")
-        st.sidebar.caption("💡 Подсказка: можно искать по отдельным словам (руб, спб) или по фразам")
+        st.sidebar.caption("💡 Подсказка: можно искать по нескольким словам (серебро талер). Поиск без учета регистра.")
         
-        # Show search suggestions
-        if search_query and len(search_query) >= 2:
-            suggestions = get_search_suggestions(conn, search_query, 5)
-            if suggestions:
-                st.sidebar.write("**Подсказки:**")
-                for suggestion in suggestions:
-                    if st.sidebar.button(f"📝 {suggestion[:50]}...", key=f"sugg_{suggestion[:20]}"):
-                        st.session_state.search_input = suggestion
-                        st.rerun()
+        # Display settings (separated from filters)
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("💰 Настройки отображения")
+        currency = st.sidebar.selectbox("Валюта цен", ['RUB', 'USD', 'EUR'], index=0)
         
         # Check if any filters are applied
         filters_applied = (year is not None or selected_metals or selected_categories or search_query)
@@ -295,7 +258,7 @@ def main():
             
             with col1:
                 # Show images if available
-                images = find_lot_images(row.get('lot_number'), row.get('image_dir'))
+                images = find_lot_images(row.get('image_dir'))
                 image_shown = False
                 
                 if images:
@@ -304,7 +267,7 @@ def main():
                         img_cols = st.columns(len(images))
                         for i, image in enumerate(images):
                             with img_cols[i]:
-                                st.image(image, use_container_width=True)
+                                st.image(image, use_column_width=True)
                         image_shown = True
                     except Exception as e:
                         st.error(f"Error loading images: {e}")
@@ -315,49 +278,61 @@ def main():
                 # Show lot info
                 st.subheader(row['title'] if pd.notna(row['title']) else "Untitled Lot")
                 
-                # Show basic info
-                info_text = ""
-                if pd.notna(row['category']):
-                    info_text += f"**Тип:** {row['category']}  \n"
-                if pd.notna(row['year']):
-                    info_text += f"**Год:** {row['year']}  \n"
-                if pd.notna(row['metal']):
-                    info_text += f"**Металл:** {row['metal']}  \n"
-                if pd.notna(row['closed_date']):
-                    info_text += f"**Дата закрытия:** {row['closed_date']}  \n"
+                # Create two columns for info and description
+                info_col, desc_col = st.columns([1, 1])
                 
-                if info_text:
-                    st.markdown(info_text)
+                with info_col:
+                    # Show basic info
+                    info_text = ""
+                    if pd.notna(row['category']):
+                        info_text += f"**Тип:** {row['category']}  \n"
+                    if pd.notna(row['year']):
+                        info_text += f"**Год:** {row['year']}  \n"
+                    if pd.notna(row['metal']):
+                        info_text += f"**Металл:** {row['metal']}  \n"
+                    if pd.notna(row['closed_date']):
+                        info_text += f"**Дата закрытия:** {row['closed_date']}  \n"
+                    if pd.notna(row['lot_url']):
+                        info_text += f"**Аукцион:** [Adalex]({row['lot_url']})  \n"
+                    
+                    if info_text:
+                        st.markdown(info_text)
+                    
+                    # Show prices (final price first, then start price)
+                    start_price = row.get(price_cols['start_price'])
+                    final_price = row.get(price_cols['final_price'])
+                    
+                    price_text = ""
+                    if pd.notna(final_price):
+                        if currency == 'RUB':
+                            price_text += f"**Итог:** {int(final_price):,} ₽  \n"
+                        elif currency == 'USD':
+                            price_text += f"**Итог:** {int(final_price):,} $  \n"
+                        elif currency == 'EUR':
+                            price_text += f"**Итог:** {int(final_price):,} €  \n"
+                    
+                    if pd.notna(start_price):
+                        if currency == 'RUB':
+                            price_text += f"**Старт:** {int(start_price):,} ₽  \n"
+                        elif currency == 'USD':
+                            price_text += f"**Старт:** {int(start_price):,} $  \n"
+                        elif currency == 'EUR':
+                            price_text += f"**Старт:** {int(start_price):,} €  \n"
+                    
+                    if price_text:
+                        st.markdown(price_text)
                 
-                # Show prices
-                start_price = row.get(price_cols['start_price'])
-                final_price = row.get(price_cols['final_price'])
-                
-                price_text = ""
-                if pd.notna(start_price):
-                    # Format price without decimals and add currency symbol
-                    if currency == 'RUB':
-                        price_text += f"**Старт:** {int(start_price):,} ₽  \n"
-                    elif currency == 'USD':
-                        price_text += f"**Старт:** {int(start_price):,} $  \n"
-                    elif currency == 'EUR':
-                        price_text += f"**Старт:** {int(start_price):,} €  \n"
-                
-                if pd.notna(final_price):
-                    if currency == 'RUB':
-                        price_text += f"**Итог:** {int(final_price):,} ₽  \n"
-                    elif currency == 'USD':
-                        price_text += f"**Итог:** {int(final_price):,} $  \n"
-                    elif currency == 'EUR':
-                        price_text += f"**Итог:** {int(final_price):,} €  \n"
-                
-                if price_text:
-                    st.markdown(price_text)
-                
-                # Show description
-                if pd.notna(row['description']):
-                    with st.expander("Подробное описание"):
-                        st.write(row['description'])
+                with desc_col:
+                    # Show description
+                    if pd.notna(row['description']):
+                        desc = row['description']
+                        # If description is short (less than 200 characters), show it directly
+                        if len(desc) < 200:
+                            st.markdown(f"**Описание:** {desc}")
+                        else:
+                            # If description is long, show it in an expander
+                            with st.expander("Подробное описание"):
+                                st.write(desc)
         
         # Pagination at the bottom
         if total_pages > 1:
@@ -380,7 +355,7 @@ def main():
                     
                     with col1:
                         # Show images if available
-                        images = find_lot_images(row.get('lot_number'), row.get('image_dir'))
+                        images = find_lot_images(row.get('image_dir'))
                         image_shown = False
                         
                         if images:
@@ -389,7 +364,7 @@ def main():
                                 img_cols = st.columns(len(images))
                                 for i, image in enumerate(images):
                                     with img_cols[i]:
-                                        st.image(image, use_container_width=True)
+                                        st.image(image, use_column_width=True)
                                 image_shown = True
                             except Exception as e:
                                 st.error(f"Error loading images: {e}")
@@ -400,50 +375,61 @@ def main():
                         # Show lot info
                         st.subheader(row['title'] if pd.notna(row['title']) else "Untitled Lot")
                         
-                        # Show basic info
-                        info_text = ""
-                        if pd.notna(row['category']):
-                            info_text += f"**Тип:** {row['category']}  \n"
-                        if pd.notna(row['year']):
-                            info_text += f"**Год:** {row['year']}  \n"
-                        if pd.notna(row['metal']):
-                            info_text += f"**Металл:** {row['metal']}  \n"
-                        if pd.notna(row['closed_date']):
-                            info_text += f"**Дата закрытия:** {row['closed_date']}  \n"
+                        # Create two columns for info and description
+                        info_col, desc_col = st.columns([1, 1])
                         
-                        if info_text:
-                            st.markdown(info_text)
+                        with info_col:
+                            # Show basic info
+                            info_text = ""
+                            if pd.notna(row['category']):
+                                info_text += f"**Тип:** {row['category']}  \n"
+                            if pd.notna(row['year']):
+                                info_text += f"**Год:** {row['year']}  \n"
+                            if pd.notna(row['metal']):
+                                info_text += f"**Металл:** {row['metal']}  \n"
+                            if pd.notna(row['closed_date']):
+                                info_text += f"**Дата закрытия:** {row['closed_date']}  \n"
+                            if pd.notna(row['lot_url']):
+                                info_text += f"**Аукцион:** [Adalex]({row['lot_url']})  \n"
+                            
+                            if info_text:
+                                st.markdown(info_text)
+                            
+                            # Show prices (final price first, then start price)
+                            start_price = row.get(price_cols['start_price'])
+                            final_price = row.get(price_cols['final_price'])
+                            
+                            price_text = ""
+                            if pd.notna(final_price):
+                                if currency == 'RUB':
+                                    price_text += f"**Итог:** {int(final_price):,} ₽  \n"
+                                elif currency == 'USD':
+                                    price_text += f"**Итог:** {int(final_price):,} $  \n"
+                                elif currency == 'EUR':
+                                    price_text += f"**Итог:** {int(final_price):,} €  \n"
+                            
+                            if pd.notna(start_price):
+                                if currency == 'RUB':
+                                    price_text += f"**Старт:** {int(start_price):,} ₽  \n"
+                                elif currency == 'USD':
+                                    price_text += f"**Старт:** {int(start_price):,} $  \n"
+                                elif currency == 'EUR':
+                                    price_text += f"**Старт:** {int(start_price):,} €  \n"
+                            
+                            if price_text:
+                                st.markdown(price_text)
                         
-                        # Show prices
-                        start_price = row.get(price_cols['start_price'])
-                        final_price = row.get(price_cols['final_price'])
-                        
-                        price_text = ""
-                        if pd.notna(start_price):
-                            # Format price without decimals and add currency symbol
-                            if currency == 'RUB':
-                                price_text += f"**Старт:** {int(start_price):,} ₽  \n"
-                            elif currency == 'USD':
-                                price_text += f"**Старт:** {int(start_price):,} $  \n"
-                            elif currency == 'EUR':
-                                price_text += f"**Старт:** {int(start_price):,} €  \n"
-                        
-                        if pd.notna(final_price):
-                            if currency == 'RUB':
-                                price_text += f"**Итог:** {int(final_price):,} ₽  \n"
-                            elif currency == 'USD':
-                                price_text += f"**Итог:** {int(final_price):,} $  \n"
-                            elif currency == 'EUR':
-                                price_text += f"**Итог:** {int(final_price):,} €  \n"
-                        
-                        if price_text:
-                            st.markdown(price_text)
-                        
-                        # Show description
-                        if pd.notna(row['description']):
-                            with st.expander("Подробное описание"):
-                                st.write(row['description'])
-    
+                        with desc_col:
+                            # Show description
+                            if pd.notna(row['description']):
+                                desc = row['description']
+                                # If description is short (less than 200 characters), show it directly
+                                if len(desc) < 200:
+                                    st.markdown(f"**Описание:** {desc}")
+                                else:
+                                    # If description is long, show it in an expander
+                                    with st.expander("Подробное описание"):
+                                        st.write(desc)
     finally:
         conn.close()
 
