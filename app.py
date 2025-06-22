@@ -267,7 +267,7 @@ def main():
                         img_cols = st.columns(len(images))
                         for i, image in enumerate(images):
                             with img_cols[i]:
-                                st.image(image, use_column_width=True)
+                                st.image(image, use_container_width=True)
                         image_shown = True
                     except Exception as e:
                         st.error(f"Error loading images: {e}")
@@ -364,7 +364,7 @@ def main():
                                 img_cols = st.columns(len(images))
                                 for i, image in enumerate(images):
                                     with img_cols[i]:
-                                        st.image(image, use_column_width=True)
+                                        st.image(image, use_container_width=True)
                                 image_shown = True
                             except Exception as e:
                                 st.error(f"Error loading images: {e}")
