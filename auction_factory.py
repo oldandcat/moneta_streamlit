@@ -153,7 +153,7 @@ class AuctionFactory:
             image_url = lot_data.get('image_url')
             if image_url:
                 try:
-                    st.image(image_url, use_column_width=False, width=500)
+                    st.image(image_url, use_container_width=False, width=500)
                 except Exception as e:
                     st.error(f"Не удалось загрузить изображение: {image_url}")
         elif auction_name == "Adalex":
@@ -165,7 +165,7 @@ class AuctionFactory:
                 if num_images == 1:
                     # Single image
                     try:
-                        st.image(images[0], use_column_width=False, width=250)
+                        st.image(images[0], use_container_width=False, width=250)
                     except Exception as e:
                         st.error(f"Ошибка при загрузке изображения: {str(e)}")
                 elif num_images == 2:
@@ -173,12 +173,12 @@ class AuctionFactory:
                     col1, col2 = st.columns(2)
                     with col1:
                         try:
-                            st.image(images[0], use_column_width=False, width=250)
+                            st.image(images[0], use_container_width=False, width=250)
                         except Exception as e:
                             st.error(f"Ошибка при загрузке изображения: {str(e)}")
                     with col2:
                         try:
-                            st.image(images[1], use_column_width=False, width=250)
+                            st.image(images[1], use_container_width=False, width=250)
                         except Exception as e:
                             st.error(f"Ошибка при загрузке изображения: {str(e)}")
     
