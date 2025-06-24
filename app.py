@@ -32,6 +32,10 @@ def main():
     st.title("🪙 Moneta Search")
     st.markdown("<p style='color: #666; font-size: 0.9em; margin-top: -10px;'>by Gaba-Dubov brothers</p>", unsafe_allow_html=True)
     
+    # Initialize session state
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 0
+    
     # Initialize auction factory
     factory = AuctionFactory()
     
@@ -59,35 +63,89 @@ def main():
         # Sidebar filters
         st.sidebar.header("Фильтры")
         
-        # Year filter (single year selection)
-        st.sidebar.subheader("Год")
-        # Update year filter with actual min/max values
-        if filter_options["years"]:
-            selected_year = st.sidebar.number_input(
-                "Введите год", 
-                min_value=min(filter_options["years"]), 
-                max_value=max(filter_options["years"]), 
-                value=st.session_state.get('selected_year', None), 
-                placeholder="Например: 1700",
-                key='selected_year'
-            )
-            year = selected_year if selected_year else None
-        else:
-            year = None
-        
-        # Update metal and category filters with actual options
-        selected_metals = st.sidebar.multiselect("Металл", options=filter_options["metals"], default=st.session_state.get('selected_metals', []), key='selected_metals')
-        selected_categories = st.sidebar.multiselect("Тип лота", options=filter_options["categories"], default=st.session_state.get('selected_categories', []), key='selected_categories')
-        
-        # --- Поиск с выбором области ---
-        st.sidebar.subheader("Поиск")
-        search_scope = st.sidebar.selectbox(
-            "Область поиска",
-            options=['title', 'description', 'both'],
-            format_func=lambda x: {'title': 'По названию', 'description': 'По описанию', 'both': 'По названию и описанию'}[x],
-            key='search_scope'
+        # Catalogue filter (highest priority)
+        st.sidebar.subheader("Каталог")
+        catalogue_type = st.sidebar.selectbox(
+            "Выберите каталог",
+            options=['', 'bitkin', 'uzdenikov', 'km'],
+            format_func=lambda x: {
+                '': 'Не выбран',
+                'bitkin': 'Биткин',
+                'uzdenikov': 'Узденников', 
+                'km': 'МК'
+            }[x],
+            key='catalogue_type'
         )
-        search_query = st.sidebar.text_input("Поисковый запрос", placeholder="Введите ключевые слова...", key='search_query')
+        
+        catalogue_number = None
+        if catalogue_type:
+            # Get available catalogue numbers for suggestions
+            available_numbers = factory.get_available_catalogue_numbers(selected_auctions, catalogue_type)
+            
+            # Create a selectbox with suggestions
+            catalogue_number = st.sidebar.selectbox(
+                "Номер в каталоге",
+                options=[''] + available_numbers,
+                placeholder="Введите номер...",
+                key='catalogue_number'
+            )
+            
+            # Show count of available numbers
+            if available_numbers:
+                st.sidebar.caption(f"Доступно номеров: {len(available_numbers)}")
+        
+        # Reset other filters if catalogue filter is active
+        if catalogue_type and catalogue_number:
+            # Clear other filter session states
+            if 'selected_year' in st.session_state:
+                st.session_state.selected_year = None
+            if 'selected_metals' in st.session_state:
+                st.session_state.selected_metals = []
+            if 'selected_categories' in st.session_state:
+                st.session_state.selected_categories = []
+            if 'search_query' in st.session_state:
+                st.session_state.search_query = ""
+            
+            # Show info message
+            st.sidebar.info("Фильтр по каталогу активен. Остальные фильтры отключены.")
+        
+        # Year filter (single year selection) - only show if no catalogue filter
+        if not (catalogue_type and catalogue_number):
+            st.sidebar.subheader("Год")
+            # Update year filter with actual min/max values
+            if filter_options["years"]:
+                selected_year = st.sidebar.number_input(
+                    "Введите год", 
+                    min_value=min(filter_options["years"]), 
+                    max_value=max(filter_options["years"]), 
+                    value=st.session_state.get('selected_year', None), 
+                    placeholder="Например: 1700",
+                    key='selected_year'
+                )
+                year = selected_year if selected_year else None
+            else:
+                year = None
+            
+            # Update metal and category filters with actual options
+            selected_metals = st.sidebar.multiselect("Металл", options=filter_options["metals"], default=st.session_state.get('selected_metals', []), key='selected_metals')
+            selected_categories = st.sidebar.multiselect("Тип лота", options=filter_options["categories"], default=st.session_state.get('selected_categories', []), key='selected_categories')
+            
+            # --- Поиск с выбором области ---
+            st.sidebar.subheader("Поиск")
+            search_scope = st.sidebar.selectbox(
+                "Область поиска",
+                options=['title', 'description', 'both'],
+                format_func=lambda x: {'title': 'По названию', 'description': 'По описанию', 'both': 'По названию и описанию'}[x],
+                key='search_scope'
+            )
+            search_query = st.sidebar.text_input("Поисковый запрос", placeholder="Введите ключевые слова...", key='search_query')
+        else:
+            # If catalogue filter is active, set other filters to None/empty
+            year = None
+            selected_metals = []
+            selected_categories = []
+            search_query = ""
+            search_scope = 'both'  # Default search scope when catalogue filter is active
         
         # Currency selection
         st.sidebar.subheader("Валюта")
@@ -116,7 +174,9 @@ def main():
             metals=selected_metals,
             categories=selected_categories,
             search_title=search_query if search_scope in ['title', 'both'] else None,
-            search_description=search_query if search_scope in ['description', 'both'] else None
+            search_description=search_query if search_scope in ['description', 'both'] else None,
+            catalogue_type=catalogue_type if catalogue_type else None,
+            catalogue_number=catalogue_number
         )
         
         total_pages = (total_count + items_per_page - 1) // items_per_page
@@ -143,6 +203,28 @@ def main():
         current_page = st.session_state.get('current_page', 0)
         offset = current_page * items_per_page
         
+        # Check if any filters are active
+        has_active_filters = (
+            (catalogue_type and catalogue_number) or
+            year is not None or
+            selected_metals or
+            selected_categories or
+            search_query
+        )
+        
+        # Show welcome message if no filters are active
+        if not has_active_filters:
+            st.info("👋 Добро пожаловать! Выберите фильтры для поиска лотов.")
+            st.markdown("""
+            **Доступные фильтры:**
+            - **Каталог**: Поиск по номерам в каталогах Биткина, Узденникова или МК
+            - **Год**: Фильтрация по году выпуска
+            - **Металл**: Фильтрация по материалу монеты
+            - **Тип лота**: Фильтрация по категории
+            - **Поиск**: Текстовый поиск по названию и описанию
+            """)
+            return
+        
         # Get filtered data
         df = factory.get_combined_data(
             selected_auctions=selected_auctions,
@@ -151,6 +233,8 @@ def main():
             categories=selected_categories,
             search_title=search_query if search_scope in ['title', 'both'] else None,
             search_description=search_query if search_scope in ['description', 'both'] else None,
+            catalogue_type=catalogue_type if catalogue_type else None,
+            catalogue_number=catalogue_number,
             currency=currency,
             sort_by=sort_by,
             limit=items_per_page,
@@ -197,8 +281,8 @@ def main():
                             st.markdown(f"<span style='margin-right:1em; font-size:0.95em;'><b>Год:</b> {int(row['year'])}</span>", unsafe_allow_html=True)
                         
                         # --- Название аукциона в самом низу ---
-                        if pd.notna(row['lot_url']):
-                            st.markdown(f"<div style='margin-top:0.15em;'><a href='{row['lot_url']}' style='color:#1a73e8; font-weight:600; text-decoration:none;'>{row['auction_name']}</a></div>", unsafe_allow_html=True)
+                        if pd.notna(row['url']):
+                            st.markdown(f"<div style='margin-top:0.15em;'><a href='{row['url']}' style='color:#1a73e8; font-weight:600; text-decoration:none;'>{row['auction_name']}</a></div>", unsafe_allow_html=True)
                         else:
                             st.markdown(f"<div style='margin-top:0.15em;'><span style='color:#1a73e8; font-weight:600;'>{row['auction_name']}</span></div>", unsafe_allow_html=True)
                     

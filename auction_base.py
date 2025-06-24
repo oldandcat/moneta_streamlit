@@ -30,6 +30,8 @@ class AuctionBase(ABC):
                          categories: Optional[List[str]] = None,
                          search_title: Optional[str] = None,
                          search_description: Optional[str] = None,
+                         catalogue_type: Optional[str] = None,
+                         catalogue_number: Optional[str] = None,
                          currency: str = 'RUB',
                          sort_by: str = 'date_recent',
                          sort_order: str = 'ASC',
@@ -43,7 +45,9 @@ class AuctionBase(ABC):
                        metals: Optional[List[str]] = None,
                        categories: Optional[List[str]] = None,
                        search_title: Optional[str] = None,
-                       search_description: Optional[str] = None) -> int:
+                       search_description: Optional[str] = None,
+                       catalogue_type: Optional[str] = None,
+                       catalogue_number: Optional[str] = None) -> int:
         """Get total count for pagination"""
         pass
     
@@ -56,6 +60,23 @@ class AuctionBase(ABC):
     def get_lot_images(self, lot_data: Dict[str, Any]) -> List[str]:
         """Get images for a specific lot"""
         pass
+    
+    def get_catalogue_numbers(self, catalogue_type: str) -> List[str]:
+        """Get available catalogue numbers for a specific catalogue type"""
+        conn = self.get_connection()
+        if conn is None:
+            return []
+        
+        catalogue_column = f"catalogue_{catalogue_type.lower()}"
+        
+        # Check if the column exists
+        try:
+            query = f"SELECT DISTINCT {catalogue_column} FROM lots WHERE {catalogue_column} IS NOT NULL AND {catalogue_column} != '' ORDER BY {catalogue_column}"
+            result = pd.read_sql_query(query, conn)
+            return result[catalogue_column].astype(str).tolist()
+        except Exception:
+            # Column doesn't exist or other error
+            return []
     
     def close_connection(self):
         """Close database connection"""

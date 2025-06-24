@@ -1,14 +1,13 @@
 from auction_base import AuctionBase
 import pandas as pd
 from typing import List, Optional, Dict, Any
-import os
-from pathlib import Path
+import requests
 
-class AdalexAuction(AuctionBase):
-    """Adalex auction implementation"""
+class RedkieMonetyAuction(AuctionBase):
+    """Redkie Monety auction implementation"""
     
     def __init__(self):
-        super().__init__("Adalex", "data/adalex/lots.db")
+        super().__init__("Redkie Monety", "data/redkie_monety/lots.db")
     
     def get_filtered_data(self, year: Optional[int] = None, 
                          metals: Optional[List[str]] = None,
@@ -22,12 +21,12 @@ class AdalexAuction(AuctionBase):
                          sort_order: str = 'ASC',
                          limit: Optional[int] = 50,
                          offset: int = 0) -> pd.DataFrame:
-        """Get filtered data from Adalex database"""
+        """Get filtered data from Redkie Monety database"""
         conn = self.get_connection()
         if conn is None:
             return pd.DataFrame()
         
-        # Base query
+        # Base query - use only 'url' field; if only 'lot_url' exists, rename it to 'url'
         query = "SELECT * FROM lots WHERE 1=1"
         params = []
         
@@ -82,6 +81,12 @@ class AdalexAuction(AuctionBase):
         
         # Execute query
         df = pd.read_sql_query(query, conn, params=params)
+        # If 'lot_url' exists and 'url' does not, rename
+        if 'lot_url' in df.columns and 'url' not in df.columns:
+            df = df.rename(columns={'lot_url': 'url'})
+        # If both exist, drop 'lot_url'
+        if 'url' in df.columns and 'lot_url' in df.columns:
+            df = df.drop(columns=['lot_url'])
         return df
     
     def get_total_count(self, year: Optional[int] = None,
@@ -163,14 +168,21 @@ class AdalexAuction(AuctionBase):
         }
     
     def get_lot_images(self, lot_data: Dict[str, Any]) -> List[str]:
-        """Get images for a specific lot from local files"""
-        image_dir = lot_data.get('image_dir')
-        if not image_dir:
+        """Get images for a specific lot from URLs"""
+        image_url = lot_data.get('image_url')  # Use 'image_url' field for Redkie Monety
+        if not image_url or not image_url.strip():
             return []
         
-        # Use image_dir from database directly (should be like data/adalex/images/lot_xxx)
-        if os.path.isdir(image_dir):
-            images = list(Path(image_dir).glob("*.jpg"))
-            if images:
-                return [str(img) for img in sorted(images)]  # Return all images sorted
-        return [] 
+        # Return the image URL directly for Redkie Monety
+        return [image_url]
+    
+    def get_image_content(self, image_url: str):
+        """Get image content from URL"""
+        try:
+            response = requests.get(image_url, timeout=10)
+            if response.status_code == 200:
+                return response.content
+            else:
+                return None
+        except Exception:
+            return None 
